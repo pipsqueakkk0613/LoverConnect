@@ -784,7 +784,7 @@ class McpService : Service(), SensorEventListener {
 // ==================== 截屏与小L ====================
 
     private fun toolGetNowPlaying(): String {
-        return MusicListenerService.getNowPlaying(this)
+        return MusicListenerService.getNowPlayingJson(this).toString()
     }
 
     private fun toolTakeScreenshot(): String {
