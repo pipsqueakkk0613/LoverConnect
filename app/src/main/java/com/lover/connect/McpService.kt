@@ -291,6 +291,21 @@ class McpService : Service(), SensorEventListener {
                 })
             })
             put(JSONObject().apply {
+                put("name", "hippocampus_sync")
+                put("description", "同步本地记忆到VPS海马体记忆系统。需要先在海马体设置中配置URL。")
+                put("inputSchema", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        put("key", JSONObject().apply { put("type", "string"); put("description", "要同步的记忆键名，不传则同步全部") })
+                    })
+                })
+            })
+            put(JSONObject().apply {
+                put("name", "hippocampus_nudge")
+                put("description", "检查海马体是否有待处理的唤醒提醒（nudge）")
+                put("inputSchema", JSONObject().apply { put("type", "object"); put("properties", JSONObject()) })
+            })
+            put(JSONObject().apply {
                 put("name", "reset_screen_time")
                 put("description", "重置屏幕使用时间计数")
                 put("inputSchema", JSONObject().apply { put("type", "object"); put("properties", JSONObject()) })
@@ -382,6 +397,8 @@ class McpService : Service(), SensorEventListener {
             "reset_screen_time" -> toolResetScreenTime()
             "save_memory" -> toolSaveMemory(args)
             "read_memory" -> toolReadMemory(args)
+            "hippocampus_sync" -> toolHippocampusSync(args)
+            "hippocampus_nudge" -> toolHippocampusNudge()
             "set_alarm" -> toolSetAlarm(args)
             "cancel_alarm" -> toolCancelAlarm(args)
             "lock_screen" -> toolLockScreen()
@@ -627,7 +644,90 @@ class McpService : Service(), SensorEventListener {
         }
         json.put(key, value)
         file.writeText(json.toString(2))
-        return "已记住：$key = $value"
+
+        // 自动同步到海马体
+        val hpResult = syncToHippocampus(key, value)
+        val extra = if (hpResult != null) " | 已同步海马体" else ""
+        return "已记住：$key = $value$extra"
+    }
+
+    private fun syncToHippocampus(name: String, content: String): String? {
+        return try {
+            val hpUrl = getSharedPreferences("lc_config", MODE_PRIVATE).getString("hippocampus_url", "") ?: ""
+            if (hpUrl.isEmpty()) return null
+
+            val url = URL("$hpUrl/api/memory/hold")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+
+            val body = JSONObject().apply {
+                put("name", name)
+                put("content", content)
+                put("tags", JSONArray().apply { put("lc-sync"); put("phone") })
+                put("domain", JSONArray().apply { put("岁岁") })
+                put("importance", 5)
+                put("type", "dynamic")
+            }
+            conn.outputStream.write(body.toString().toByteArray())
+            val resp = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            resp
+        } catch (_: Exception) { null }
+    }
+
+    private fun toolHippocampusSync(args: JSONObject): String {
+        val key = args.optString("key", "").trim()
+        val file = java.io.File(filesDir, "lc_memory.json")
+        if (!file.exists()) return "记忆库为空"
+
+        val json = JSONObject(file.readText())
+        val keys = if (key.isEmpty()) {
+            json.keys().asSequence().toList()
+        } else {
+            listOf(key)
+        }
+
+        val sb = StringBuilder()
+        var count = 0
+        for (k in keys) {
+            val v = json.optString(k, "") ?: continue
+            if (v.isEmpty()) continue
+            val result = syncToHippocampus(k, v)
+            if (result != null) {
+                count++
+                sb.appendLine("✅ $k")
+            } else {
+                sb.appendLine("❌ $k")
+            }
+        }
+        return "同步完成：$count/${keys.size} 条\n${sb}"
+    }
+
+    private fun toolHippocampusNudge(): String {
+        return try {
+            val hpUrl = getSharedPreferences("lc_config", MODE_PRIVATE).getString("hippocampus_url", "") ?: ""
+            if (hpUrl.isEmpty()) return "未配置海马体地址，请在App中设置"
+
+            val url = URL("$hpUrl/api/nudge/check")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            val resp = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+
+            val json = JSONObject(resp)
+            if (json.optBoolean("has_nudge", false)) {
+                val nudge = json.getJSONObject("nudge")
+                return "📬 有唤醒提醒：${nudge.optString("message", "")}"
+            }
+            return "暂无唤醒提醒"
+        } catch (e: Exception) {
+            return "检查失败：${e.message}"
+        }
     }
 
     private fun toolReadMemory(args: JSONObject): String {

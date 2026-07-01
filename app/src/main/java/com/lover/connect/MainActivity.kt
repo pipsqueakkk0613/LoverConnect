@@ -416,6 +416,29 @@ fun MainScreen() {
 
         HorizontalDivider()
 
+        // ===== 海马体同步 =====
+        Text("海马体同步", fontSize = 18.sp)
+        Text("填入VPS上海马体的地址，记忆自动双向同步到海马体", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        val hippocampusUrl = remember { mutableStateOf(prefs.getString("hippocampus_url", "") ?: "") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = hippocampusUrl.value,
+                onValueChange = { hippocampusUrl.value = it },
+                label = { Text("海马体地址（如 https://suisuiandyou.cyou/hp）") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                prefs.edit().putString("hippocampus_url", hippocampusUrl.value.trim()).apply()
+            }) {
+                Text("保存")
+            }
+        }
+
+        HorizontalDivider()
+
         // ===== 纪念日管理 =====
         Text("纪念日", fontSize = 18.sp)
 
