@@ -36,6 +36,7 @@ jobs:
           else
             echo "Keystore reused from cache"
           fi
+          cp ~/.android/debug.keystore debug.keystore
 
       - name: Make gradlew executable
         run: chmod +x gradlew
