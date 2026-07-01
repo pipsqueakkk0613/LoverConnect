@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,13 +24,14 @@ jobs:
         run: |
           yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || true
 
-      - name: Generate keystore (first time only)
+      - name: Generate keystore (once, then committed)
         run: |
           if [ ! -f debug.keystore ]; then
             keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=LC,O=LC,C=CN"
-            echo "KEYSTORE_GENERATED=true" >> $GITHUB_ENV
+            echo "NEW_KEY=true" >> $GITHUB_ENV
+            echo "Keystore generated"
           else
-            echo "Keystore already in repo"
+            echo "Keystore reused from repo"
           fi
 
       - name: Make gradlew executable
@@ -36,15 +40,17 @@ jobs:
       - name: Build APK
         run: ./gradlew assembleDebug
 
+      - name: Commit keystore (first time only)
+        if: env.NEW_KEY == 'true'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add debug.keystore
+          git commit -m "chore: 固定签名keystore [skip ci]"
+          git push
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: LoverConnect-debug
           path: app/build/outputs/apk/debug/*.apk
-
-      - name: Upload keystore (first time only)
-        if: env.KEYSTORE_GENERATED == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-keystore
-          path: debug.keystore
