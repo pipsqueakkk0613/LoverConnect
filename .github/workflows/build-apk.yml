@@ -21,17 +21,13 @@ jobs:
         run: |
           yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || true
 
-      - name: Cache keystore
-        id: keystore
-        uses: actions/cache@v4
-        with:
-          path: debug.keystore
-          key: lc-keystore-v2
-
-      - name: Generate keystore
+      - name: Generate keystore (first time only)
         run: |
           if [ ! -f debug.keystore ]; then
             keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=LC,O=LC,C=CN"
+            echo "KEYSTORE_GENERATED=true" >> $GITHUB_ENV
+          else
+            echo "Keystore already in repo"
           fi
 
       - name: Make gradlew executable
@@ -45,3 +41,10 @@ jobs:
         with:
           name: LoverConnect-debug
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload keystore (first time only)
+        if: env.KEYSTORE_GENERATED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-keystore
+          path: debug.keystore
