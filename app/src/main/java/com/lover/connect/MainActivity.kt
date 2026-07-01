@@ -70,6 +70,8 @@ fun MainScreen() {
     var newAnnDate by remember { mutableStateOf("") }
     var newAnnType by remember { mutableStateOf("countup") }
     var anniversaries by remember { mutableStateOf(loadAnniversaries(prefs)) }
+    var annError by remember { mutableStateOf("") }
+    var annSuccess by remember { mutableStateOf("") }
 // 小L配置
     var aiName by remember { mutableStateOf(prefs.getString("ai_name", "") ?: "") }
     var userName by remember { mutableStateOf(prefs.getString("user_name", "") ?: "") }
@@ -473,13 +475,37 @@ fun MainScreen() {
             )
             Text("倒计时（还有X天）", fontSize = 14.sp)
         }
+        if (annError.isNotEmpty()) {
+            Text(annError, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+        }
+        if (annSuccess.isNotEmpty()) {
+            Text(annSuccess, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        }
         Button(onClick = {
-            if (newAnnName.isNotBlank() && newAnnDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-                anniversaries = anniversaries + AnniversaryItem(newAnnName.trim(), newAnnDate.trim(), newAnnType)
-                saveAnniversaries(prefs, anniversaries)
-                newAnnName = ""
-                newAnnDate = ""
+            annError = ""
+            annSuccess = ""
+            if (newAnnName.isBlank()) {
+                annError = "请输入纪念日名称"
+                return@Button
             }
+            // 支持多种日期格式 → 统一为 YYYY-MM-DD
+            val raw = newAnnDate.trim()
+            val fixed = try {
+                val parts = raw.replace("/", "-").split("-")
+                if (parts.size != 3) throw Exception()
+                val y = parts[0].toInt()
+                val m = parts[1].toInt().toString().padStart(2, '0')
+                val d = parts[2].toInt().toString().padStart(2, '0')
+                "$y-$m-$d"
+            } catch (_: Exception) {
+                annError = "日期格式不对，试试 2026-07-02 或 2026/7/2"
+                return@Button
+            }
+            anniversaries = anniversaries + AnniversaryItem(newAnnName.trim(), fixed, newAnnType)
+            saveAnniversaries(prefs, anniversaries)
+            annSuccess = "「${newAnnName.trim()}」已添加 ✅"
+            newAnnName = ""
+            newAnnDate = ""
         }) {
             Text("添加")
         }
