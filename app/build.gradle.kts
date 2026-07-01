@@ -18,18 +18,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val keystoreFile = rootProject.file("debug.keystore")
+    val useFixedSigning = keystoreFile.exists()
+
     signingConfigs {
-        create("release") {
-            storeFile(file(rootProject.file("debug.keystore")))
-            storePassword("android")
-            keyAlias("androiddebugkey")
-            keyPassword("android")
+        if (useFixedSigning) {
+            create("fixed") {
+                storeFile = keystoreFile
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            if (useFixedSigning) signingConfig = signingConfigs.getByName("fixed")
         }
         release {
             isMinifyEnabled = false
@@ -37,7 +42,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (useFixedSigning) signingConfig = signingConfigs.getByName("fixed")
         }
     }
     compileOptions {
