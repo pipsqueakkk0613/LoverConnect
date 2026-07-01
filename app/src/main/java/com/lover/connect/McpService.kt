@@ -306,6 +306,11 @@ class McpService : Service(), SensorEventListener {
                 put("inputSchema", JSONObject().apply { put("type", "object"); put("properties", JSONObject()) })
             })
             put(JSONObject().apply {
+                put("name", "get_sleep_log")
+                put("description", "检测作息：基于App使用模式推断入睡/起床时间。哔哩哔哩+不熄屏+深夜=睡觉。")
+                put("inputSchema", JSONObject().apply { put("type", "object"); put("properties", JSONObject()) })
+            })
+            put(JSONObject().apply {
                 put("name", "reset_screen_time")
                 put("description", "重置屏幕使用时间计数")
                 put("inputSchema", JSONObject().apply { put("type", "object"); put("properties", JSONObject()) })
@@ -393,6 +398,7 @@ class McpService : Service(), SensorEventListener {
             "get_anniversary" -> toolGetAnniversary()
             "get_weather" -> toolGetWeather()
             "get_steps" -> toolGetSteps()
+            "get_sleep_log" -> toolGetSleepLog()
             "send_notification" -> toolSendNotification(args)
             "reset_screen_time" -> toolResetScreenTime()
             "save_memory" -> toolSaveMemory(args)
@@ -499,6 +505,79 @@ class McpService : Service(), SensorEventListener {
             sb.toString()
         } catch (e: Exception) {
             "获取失败：${e.message}"
+        }
+    }
+
+    private fun toolGetSleepLog(): String {
+        return try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val end = System.currentTimeMillis()
+            val start = end - 24 * 60 * 60 * 1000L
+            val events = usm.queryEvents(start, end)
+            val timeline = mutableListOf<Pair<Long, String>>()
+
+            // 收集所有 ACTIVITY_RESUMED 事件
+            var evt = android.app.usage.UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(evt)
+                if (evt.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED) {
+                    timeline.add(Pair(evt.timeStamp, evt.packageName))
+                }
+            }
+
+            if (timeline.isEmpty()) return "无App切换记录，无法推断作息"
+
+            // 睡眠检测：B站连续前台 > 1小时 + 深夜时段
+            val BILI = "tv.danmaku.bili"
+            var sleepStart: Long = 0
+            var sleepEnd: Long = 0
+            var biliStreakStart: Long = 0
+            var lastBiliTime: Long = 0
+            val sleepLog = mutableListOf<String>()
+
+            for ((ts, pkg) in timeline) {
+                val hour = SimpleDateFormat("H", Locale.getDefault()).format(Date(ts)).toInt()
+                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
+                val isBili = pkg.contains(BILI)
+                val isNight = hour in 0..7
+
+                if (isBili && isNight) {
+                    if (biliStreakStart == 0L) {
+                        biliStreakStart = ts
+                    }
+                    lastBiliTime = ts
+                } else if (biliStreakStart > 0) {
+                    // B站连续被打断，检查是否超过 1 小时
+                    val streakMin = (lastBiliTime - biliStreakStart) / 60000
+                    if (streakMin >= 60 && sleepStart == 0L) {
+                        sleepStart = biliStreakStart
+                        sleepLog.add("💤 入睡: ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(sleepStart))} (B站连续${streakMin}分钟)")
+                    } else if (sleepStart > 0 && sleepEnd == 0L) {
+                        sleepEnd = ts
+                        val sleepMin = (sleepEnd - sleepStart) / 60000
+                        val sleepH = sleepMin / 60
+                        val sleepM = sleepMin % 60
+                        sleepLog.add("⏰ 醒来: ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(sleepEnd))} (睡了${sleepH}h${sleepM}m)")
+                    }
+                    biliStreakStart = 0
+                    lastBiliTime = 0
+                }
+            }
+
+            // 如果还在B站连续中（还没醒）
+            if (biliStreakStart > 0 && sleepStart > 0 && sleepEnd == 0L) {
+                sleepLog.add("🛏️ 当前仍在睡眠中 (B站连续中)")
+            }
+
+            if (sleepLog.isEmpty()) {
+                "未检测到明确的睡眠模式（需要B站连续前台 >1h + 深夜0-7点）"
+            } else {
+                val sb = StringBuilder("作息推断:\n")
+                sleepLog.forEach { sb.appendLine(it) }
+                sb.toString()
+            }
+        } catch (e: Exception) {
+            "作息检测失败：${e.message}"
         }
     }
 
